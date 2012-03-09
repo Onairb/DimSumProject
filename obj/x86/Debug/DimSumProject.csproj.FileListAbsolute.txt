@@ -1,0 +1,28 @@
+C:\Users\Briano\Documents\Visual Studio 2010\Projects\DimSumProject\bin\x86\Debug\COM Port Terminal.exe.config
+C:\Users\Briano\Documents\Visual Studio 2010\Projects\DimSumProject\bin\x86\Debug\COM Port Terminal.exe
+C:\Users\Briano\Documents\Visual Studio 2010\Projects\DimSumProject\bin\x86\Debug\COM Port Terminal.pdb
+C:\Users\Briano\Documents\Visual Studio 2010\Projects\DimSumProject\obj\x86\Debug\ResolveAssemblyReference.cache
+C:\Users\Briano\Documents\Visual Studio 2010\Projects\DimSumProject\obj\x86\Debug\COMPortTerminal.MainForm.resources
+C:\Users\Briano\Documents\Visual Studio 2010\Projects\DimSumProject\obj\x86\Debug\COMPortTerminal.PortSettingsDialog.resources
+C:\Users\Briano\Documents\Visual Studio 2010\Projects\DimSumProject\obj\x86\Debug\COMPortTerminal.Properties.Resources.resources
+C:\Users\Briano\Documents\Visual Studio 2010\Projects\DimSumProject\obj\x86\Debug\GenerateResource.read.1.tlog
+C:\Users\Briano\Documents\Visual Studio 2010\Projects\DimSumProject\obj\x86\Debug\GenerateResource.write.1.tlog
+C:\Users\Briano\Documents\Visual Studio 2010\Projects\DimSumProject\obj\x86\Debug\COM Port Terminal.exe
+C:\Users\Briano\Documents\Visual Studio 2010\Projects\DimSumProject\obj\x86\Debug\COM Port Terminal.pdb
+C:\Users\Briano\Documents\Visual Studio 2010\Projects\DimSumProject\obj\x86\Debug\COMPortTerminal.Specials.resources
+C:\Users\Briano\Desktop\University\Dropbox\DimSumProject\bin\x86\Debug\COM Port Terminal.exe.config
+C:\Users\Briano\Desktop\University\Dropbox\DimSumProject\obj\x86\Debug\COM Port Terminal.exe
+C:\Users\Briano\Desktop\University\Dropbox\DimSumProject\obj\x86\Debug\COM Port Terminal.pdb
+C:\Users\Briano\Desktop\University\Dropbox\DimSumProject\bin\x86\Debug\COM Port Terminal.exe
+C:\Users\Briano\Desktop\University\Dropbox\DimSumProject\bin\x86\Debug\COM Port Terminal.pdb
+C:\Users\Briano\Desktop\University\Dropbox\DimSumProject\obj\x86\Debug\ResolveAssemblyReference.cache
+C:\Users\Briano\Desktop\University\Dropbox\DimSumProject\obj\x86\Debug\COMPortTerminal.MainForm.resources
+C:\Users\Briano\Desktop\University\Dropbox\DimSumProject\obj\x86\Debug\COMPortTerminal.PortSettingsDialog.resources
+C:\Users\Briano\Desktop\University\Dropbox\DimSumProject\obj\x86\Debug\COMPortTerminal.Properties.Resources.resources
+C:\Users\Briano\Desktop\University\Dropbox\DimSumProject\obj\x86\Debug\COMPortTerminal.Specials.resources
+C:\Users\Briano\Desktop\University\Dropbox\DimSumProject\obj\x86\Debug\GenerateResource.read.1.tlog
+C:\Users\Briano\Desktop\University\Dropbox\DimSumProject\obj\x86\Debug\GenerateResource.write.1.tlog
+C:\Users\Briano\Desktop\University\Dropbox\DimSumProject\obj\x86\Debug\COMPortTerminal.RunReq.resources
+C:\Users\Briano\DimSumProject\bin\x86\Debug\COM Port Terminal.exe.config
+C:\Users\Briano\DimSumProject\obj\x86\Debug\COM Port Terminal.exe
+C:\Users\Briano\DimSumProject\obj\x86\Debug\COM Port Terminal.pdb

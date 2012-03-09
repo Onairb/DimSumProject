@@ -1,11 +1,13 @@
 using Microsoft.Win32;
 using System;
 using System.Drawing;
+using System.IO;
 using System.IO.Ports;
 using System.Windows.Forms;
 using COMPortTerminal.Properties;
 using System.Diagnostics;
 using System.Collections.Generic;
+using System.Timers;
 
 namespace COMPortTerminal
 {   
@@ -14,13 +16,24 @@ namespace COMPortTerminal
     {
         private string str_rfid = "";
         private int quantity=1;
-        private enum eMode { eOperational, eCancel };
+        private enum eMode { eOperational, eCancel, eCheckout };
+        private enum eTea { eRequest,eClear };
+        private enum eWaiter { eRequest, eClear };
+        private eTea tea_status= eTea.eClear;
+        private eWaiter waiter_status= eWaiter.eClear;
         private eMode mode = eMode.eOperational;
         //stack use to delete the most previous one? Or do we not need it
-        private Stack<DimSumSizes> stack = new Stack<DimSumSizes>();
-        private Stack<DimSumSizes> temp_stack = new Stack<DimSumSizes>();
+        private OrderList order_list = new OrderList();
+        private Stack<Order> stack = new Stack<Order>();
+        private Stack<Order> temp_stack = new Stack<Order>();
         private double bill_total=0;
+        private double sub_total = 0;
         private int item_total=0;
+        private System.Timers.Timer t = null;
+        private System.Timers.Timer t_num = null;
+        private delegate void SetTextCallback(string text);
+        private SpcList Requests = new SpcList();
+        private string tableNum = "1";
 
         public MainForm() 
         { 
@@ -44,10 +57,11 @@ namespace COMPortTerminal
             
         private Color colorReceive = Color.Green;
         private Color colorTransmit = Color.Black;
-        private int maximumTextBoxLength;
+        //private int maximumTextBoxLength;
         private string receiveBuffer;
         private bool savedOpenPortOnStartup;
         private int userInputIndex;
+        private int orderID = 0;
 
         private void AccessForm( string action, string formText, Color textColor ) 
         {
@@ -59,8 +73,8 @@ namespace COMPortTerminal
 
                     //rtbMonitor.AppendText(formText);
                     str_rfid += formText;
-
-                    if (str_rfid.Length >= 10)
+                    
+                    if (str_rfid.Length > 13)
                     {
                         switch (mode)
                         {
@@ -68,118 +82,146 @@ namespace COMPortTerminal
                             case eMode.eOperational:
                                 if (str_rfid.Contains("4B00DA17F573"))
                                 {
-                                    DimSumSizes DSSmall = new DimSumSizes(DimSumSizes.eSize.eSmall, quantity);
-                                    rtbMonitor.AppendText(DSSmall.getQuantity() + "\t" + DSSmall.getSizeString()
-                                                            + "\t\t" + DSSmall.getPrice() + "\n");
-                                    stack.Push(DSSmall);
+                                   DisplayStatus("", textColor);
+                                   Order new_item = new Order(Order.eSize.eSmall, quantity, orderID);
+                                   order_list.Add(new_item);  
+                                  // OrderListBox.SelectedIndex = OrderListBox.Items.Count - 1;
+                                   // rtbMonitor.AppendText(DSSmall.getQuantity() + "\t" + DSSmall.getSizeString()
+                                                          //  + "\t\t" + new_item.getPrice() + "\n");
+                                   // stack.Push(DSSmall);
+
+                                    //add new item to file
+                                    order_list.UpdateFileAdd(new_item);
                                 }
                                 else if (str_rfid.Contains("4800E50372DC"))
                                 {
-                                    DimSumSizes DSMedium = new DimSumSizes(DimSumSizes.eSize.eMedium, quantity);
-                                    rtbMonitor.AppendText(DSMedium.getQuantity() + "\t" + DSMedium.getSizeString()
-                                                            + "\t" + DSMedium.getPrice() + "\n");
-                                    stack.Push(DSMedium);
+                                    DisplayStatus("", textColor);
+                                    Order new_item = new Order(Order.eSize.eMedium, quantity, orderID);
+                                    order_list.Add(new_item);
+                                    //OrderListBox.SelectedIndex = OrderListBox.Items.Count -1;
+                                    //rtbMonitor.AppendText(new_item.getQuantity() + "\t" + new_item.getSizeString()
+                                   //                         + "\t" + new_item.getPrice() + "\n");
+                                   // stack.Push(new_item);
+                                    //add new item to file
+                                    order_list.UpdateFileAdd(new_item);
                                 }
                                 else if (str_rfid.Contains("4B00DA60DB2A"))
                                 {
-                                    DimSumSizes DSLarge = new DimSumSizes(DimSumSizes.eSize.eLarge, quantity);
+                                    DisplayStatus("", textColor);
+                                    Order new_item = new Order(Order.eSize.eLarge, quantity, orderID);
+                                    order_list.Add(new_item);
+                                   // OrderListBox.SelectedIndex = OrderListBox.Items.Count - 1;
                                     //probably don't need this line
-                                    rtbMonitor.AppendText(DSLarge.getQuantity() + "\t" + DSLarge.getSizeString() 
-                                                            + "\t\t" + DSLarge.getPrice() + "\n");
-                                    stack.Push(DSLarge);
+                                    //rtbMonitor.AppendText(new_item.getQuantity() + "\t" + new_item.getSizeString() 
+                                    //                        + "\t\t" + new_item.getPrice() + "\n");
+                                    //stack.Push(new_item);
+                                    //add new item to file
+                                    order_list.UpdateFileAdd(new_item);
                                 }
                                 else
                                 {
-                                    DisplayStatus("Invalid Card. Please scan again.\n", textColor);
+                                    DisplayStatus("Invalid Card. Please scan again.\n" + str_rfid, textColor);
+                                  
                                 }
-                                
+
+                                orderID++;
+                                OrderListBox.DataSource = order_list.toStringList();
+                                if (order_list.Count != 0)
+                                {
+                                    OrderListBox.SetSelected(0, false);
+                                }
+                                OrderListBox.Refresh();
                                 break;
 
                             //cancel mode
                             case eMode.eCancel:
-                                rtbMonitor.Clear();
-                                if (str_rfid.Contains("4B00DA17F573"))
+                                string card_of_interest = "";
+                                int i = 0;
+                                int del = order_list.Count-1;
+                                foreach (Order n in order_list)
                                 {
-                                    Console.WriteLine("Stack SIZE" + stack.Count);
-                                        while (stack.Count!=0)
+                                    if (OrderListBox.GetSelected(del))
+                                    {
+                                         
+                                        switch (n.getSize())
                                         {
-                                            DimSumSizes size = stack.Peek();
-                                            if (size.getSize() != DimSumSizes.eSize.eSmall)
+                                            case Order.eSize.eSmall:
+                                                card_of_interest = "4B00DA17F573";
+                                                break;
+                                            case Order.eSize.eMedium:
+                                                card_of_interest = "4800E50372DC";
+                                                break;
+                                            case Order.eSize.eLarge:
+                                                card_of_interest = "4B00DA60DB2A";
+                                                break;
+                                            default:
+                                                Console.WriteLine("ERROR: INVALID CARD");
+                                                break;
+                                        }
+
+                                        if (str_rfid.Contains("4B00DA47EA3C")|| str_rfid.Contains(card_of_interest))
+                                        {
+                                            CancelButton.BackColor = Color.LightGray;
+                                            mode = eMode.eOperational;
+                                            if (quantity < n.getQuantity())
                                             {
-                                                stack.Pop();
+                                                n.setQuantity(n.getQuantity() - quantity);
                                             }
                                             else
                                             {
-                                                break;
-                                                // push back all the stuff back into the main one
-                                                /*if (temp_stack.Count != 0)
-                                                {
-                                                    foreach (DimSumSizes temp in temp_stack)
-                                                    {
-                                                        stack.Push(temp_stack.Pop());
-                                                    }
-                                                }*/
+                                                order_list.RemoveAt(i);
                                             }
+                                            
+                                            OrderListBox.DataSource = order_list.toStringList();
+                                            OrderListBox.Refresh();
+                                            order_list.UpdateFile();
+                                            if (order_list.Count != 0)
+                                            {
+                                                OrderListBox.SetSelected(0, false);
+                                            }
+                                            break;
                                         }
-                                        Console.WriteLine("Stack SIZE" + stack.Count);
-                                        Console.WriteLine ("DONE");
-                                    //small
-                                    // keep popping value and putting it into another stack
-                                    // until you hit a small and push everything back in?
-                                    // call a function to update display when queue updates.
-                                    
-                                    //question: how the hell we gonna dispaly this if we send the stack tot he amanger side...
-                                    //it'll be upside down -.-" (reversing the stack seems dumb too)
-                                }
-                                else if (str_rfid.Contains("4800E50372DC"))
-                                {
-                                    //medium
-                                }
-                                else if (str_rfid.Contains("4B00DA60DB2A"))
-                                {
-                                    //large
-                                }
-                                else
-                                {
-                                    DisplayStatus("Invalid Card. Please scan again.\n", textColor);
-                                    return;
-                                }
-                                //display new thing
-                                //hopefully this doesn't reverse the order hahah...
-                                DimSumSizes[] list_of_items = stack.ToArray();
-                                foreach (DimSumSizes size in list_of_items)
-                                {
-                                    rtbMonitor.AppendText(size.getQuantity() + "\t" + size.getSizeString()
-                                                    + "\t" + size.getPrice() + "\n");
+                                        else
+                                        {
+                                            DisplayStatus("Invalid Card. Please scan again.\n", textColor);
+                                            return;
+                                        }
+                                    }
+                                    i++;
+                                    del--;
                                 }
                                 break;
+                                
+                                case eMode.eCheckout:
+                                    //disable all use                                   
+                                break;
+
                             default:
                                 Console.WriteLine("INVALID MODE");
                                 break;
                         }
                         //reset text
                         str_rfid = "";
-                        bill_total = 0;
-                        item_total = 0;
-                        //calcaulate total here
-                        foreach (DimSumSizes size in stack)
-                        {
-                            bill_total += size.getQuantity() * size.getPrice();
-                            item_total += size.getQuantity();
-                        }
+                        txtQuantity.Clear();
+                        quantity = 1;
+                        sub_total = order_list.getTotalPrice();
+                        bill_total = sub_total*1.13;
+                        item_total = order_list.getTotalQuantity();
                         Console.WriteLine("TOTAL: " + bill_total);
+                        Console.WriteLine("SUBTOTAL: " + sub_total);
                         Console.WriteLine("Total Item: " + item_total);
-                        totalSum.Text = "Total: $" + bill_total + "\n" + "Total # of Items: " + item_total;
+                        totalSum.Text = "Subtotal: $" + sub_total + "\n" + "Total:$" + bill_total.ToString("0.00") + "\n" + "Total # of Items: " + item_total;
                     }
                     // Return to the default color.
-                    rtbMonitor.SelectionColor = colorTransmit; 
+                    //rtbMonitor.SelectionColor = colorTransmit; 
                     
                     //  Trim the textbox's contents if needed.
                     
-                    if ( rtbMonitor.TextLength > maximumTextBoxLength ) 
+                   /* if ( rtbMonitor.TextLength > maximumTextBoxLength ) 
                     {                         
                         TrimTextBoxContents();                         
                     }                    
+                    */
                     break;
 
                 case "DisplayStatus":
@@ -201,6 +243,16 @@ namespace COMPortTerminal
                     
                     break;
             }                      
+        }
+
+        void t_Elapsed(object sender, ElapsedEventArgs e)
+        {
+            CancelButton.BackColor = Color.LightGray;
+            mode = eMode.eOperational;
+            if (t != null)
+            {
+                t.Dispose();
+            }
         } 
      
         /// <summary>
@@ -299,10 +351,10 @@ namespace COMPortTerminal
          
 
         private void InitializeDisplayElements() 
-        {        
-            
-            maximumTextBoxLength = 10000; 
-            rtbMonitor.SelectionColor = colorTransmit;             
+        {
+            totalSum.Text = "Subtotal: $" + sub_total + "\n" + "Total:$" + bill_total.ToString("0.00") + "\n" + "Total # of Items: " + item_total;
+            //maximumTextBoxLength = 10000; 
+            //rtbMonitor.SelectionColor = colorTransmit;             
         }
            
         /// <summary> 
@@ -425,7 +477,7 @@ namespace COMPortTerminal
         /// create a temporary richtextbox, copy the contents to be preserved to the 
         /// temporary richtextbox,and copy the temporary richtextbox back to the original richtextbox.
         /// </remarks>
-
+        /*
         private void TrimTextBoxContents() 
         {        
             RichTextBox rtbTemp = new RichTextBox(); 
@@ -442,7 +494,7 @@ namespace COMPortTerminal
             rtbTemp = null; 
             rtbMonitor.SelectionStart = rtbMonitor.TextLength;             
         } 
-
+        */
         /// <summary>
         /// Set the text in the ToolStripStatusLabel.
         /// </summary>
@@ -594,7 +646,7 @@ namespace COMPortTerminal
                 SetPortParameters( UserPort1.SavedPortName, UserPort1.SavedBitRate, ( ( Handshake )( UserPort1.SavedHandshake ) ) ); 
                 
                 DisplayCurrentSettings(); 
-                UserPort1.ParameterChanged = true; 
+                UserPort1.ParameterChanged = true;
             } 
         } 
                 
@@ -613,310 +665,320 @@ namespace COMPortTerminal
         	} 
         }
 
-        private void cancelText_Click(object sender, EventArgs e)
+        private void CancelButtont_Click(object sender, EventArgs e)
         {
-            if (cancelText.ForeColor == Color.Maroon)
+            CancelButton.BackColor = Color.DarkGray;
+            t = new System.Timers.Timer(5000);
+            t.Elapsed += new ElapsedEventHandler(t_Elapsed);
+            t.AutoReset = false;
+            t.Enabled = true;
+            mode = eMode.eCancel;
+
+        }
+
+        private void Numpad1_Click(object sender, EventArgs e)
+        {
+            txtQuantity.AppendText("1");
+            checkQuantitySize();
+        }
+
+        private void NumpadCLR_Click(object sender, EventArgs e)
+        {
+            txtQuantity.Clear();
+            quantity = 1;
+        }
+
+        private void Numpad9_Click(object sender, EventArgs e)
+        {
+            txtQuantity.AppendText("9");
+            checkQuantitySize();
+        }
+
+        private void Numpad8_Click(object sender, EventArgs e)
+        {
+            txtQuantity.AppendText("8");
+            checkQuantitySize();
+        }
+
+        private void Numpad7_Click(object sender, EventArgs e)
+        {
+            txtQuantity.AppendText("7");
+            checkQuantitySize();
+        }
+
+        private void Numpad6_Click(object sender, EventArgs e)
+        {
+            txtQuantity.AppendText("6");
+            checkQuantitySize();
+        }
+
+        private void Numpad3_Click(object sender, EventArgs e)
+        {
+            txtQuantity.AppendText("3");
+            checkQuantitySize();
+        }
+
+        private void Numpad5_Click(object sender, EventArgs e)
+        {
+            txtQuantity.AppendText("5");
+            checkQuantitySize();
+        }
+
+        private void Numpad4_Click(object sender, EventArgs e)
+        {
+            txtQuantity.AppendText("4");
+            checkQuantitySize();
+        }
+
+        private void Numpad2_Click(object sender, EventArgs e)
+        {
+            txtQuantity.AppendText("2");
+            checkQuantitySize();
+        }
+
+        private void Numpad0_Click(object sender, EventArgs e)
+        {
+            //to prevent case starting at 0
+            if (txtQuantity.Text != "")
             {
-                cancelText.ForeColor = Color.White;
-                cancelText.BackColor = Color.Maroon;
-                mode = eMode.eCancel;
+                txtQuantity.AppendText("0");
+                checkQuantitySize();
+            }
+        }
+        private void checkQuantitySize()
+        {
+            if (Convert.ToInt16(txtQuantity.Text) > 99)
+            {
+                txtQuantity.Text = "99";
+            }
+            quantity = Convert.ToInt16(txtQuantity.Text);
+            if (t_num != null)
+            {
+                t_num.Dispose();
+            }
+            t_num = new System.Timers.Timer(5000);
+            t_num.Elapsed += new ElapsedEventHandler(t_Elapsed_Numpad);
+            t_num.AutoReset = false;
+            t_num.Enabled = true;
+        }
+        private void t_Elapsed_Numpad(object sender, ElapsedEventArgs e)
+        {
+            this.SetText("") ;
+        }
+        private void SetText(string text)
+        {
+            // InvokeRequired required compares the thread ID of the
+            // calling thread to the thread ID of the creating thread.
+            // If these threads are different, it returns true.
+            if (this.txtQuantity.InvokeRequired)
+            {
+                SetTextCallback d = new SetTextCallback(SetText);
+                this.Invoke(d, new object[] { text });
             }
             else
             {
-                cancelText.ForeColor = Color.Maroon;
-                cancelText.BackColor = Color.White;
+                this.txtQuantity.Text = text;
+            }
+        }
+
+        private void but_Bill_Click(object sender, EventArgs e)
+        {
+            //checkout mode
+            mode = eMode.eCheckout;
+            
+            //clear tea and waiter
+            tea_status = eTea.eClear;
+            waiter_status = eWaiter.eClear;
+            teaWaiterStatusCheck();
+
+            DialogResult result= MessageBox.Show(this,"The system is now in checkout mode. To exist checkout mode, press OK.", "Checkout Mode");
+            if (result == DialogResult.OK)
+            {
                 mode = eMode.eOperational;
             }
         }
 
-        private void NumPad1_Click(object sender, EventArgs e)
+        private void teaButton_Click(object sender, EventArgs e)
         {
-            if (NumPad1.BackColor == Color.White)
+            //send the request if it is in the clear mode
+            if (tea_status == eTea.eClear)
             {
-                NumPad1.ForeColor = Color.White;
-                NumPad1.BackColor = Color.CadetBlue;
-                NumPad2.ForeColor = Color.Black;
-                NumPad2.BackColor = Color.White;
-                NumPad3.ForeColor = Color.Black;
-                NumPad3.BackColor = Color.White;
-                NumPad4.ForeColor = Color.Black;
-                NumPad4.BackColor = Color.White;
-                NumPad5.ForeColor = Color.Black;
-                NumPad5.BackColor = Color.White;
-                NumPad6.ForeColor = Color.Black;
-                NumPad6.BackColor = Color.White;
-                NumPad7.ForeColor = Color.Black;
-                NumPad7.BackColor = Color.White;
-                NumPad8.ForeColor = Color.Black;
-                NumPad8.BackColor = Color.White;
-                NumPad9.ForeColor = Color.Black;
-                NumPad9.BackColor = Color.White;
+                SendRequest("Tea");
             }
-            else
-            {
-                NumPad1.ForeColor = Color.Black;
-                NumPad1.BackColor = Color.White;                
-            }
-            quantity = 1;
+            //set a request and clear status
+            //set request will make light highlight, clear will change back to normal
+            tea_status = eTea.eRequest;
+            teaButton.BackColor = Color.Lime;
+            
+            
+            
         }
 
-        private void NumPad2_Click(object sender, EventArgs e)
+        private void waiterButton_Click(object sender, EventArgs e)
         {
-            if (NumPad2.BackColor == Color.White)
+            //send the request if it is in the clear mode
+            if (waiter_status == eWaiter.eClear)
             {
-                NumPad1.ForeColor = Color.Black;
-                NumPad1.BackColor = Color.White;
-                NumPad2.ForeColor = Color.White;
-                NumPad2.BackColor = Color.CadetBlue;
-                NumPad3.ForeColor = Color.Black;
-                NumPad3.BackColor = Color.White;
-                NumPad4.ForeColor = Color.Black;
-                NumPad4.BackColor = Color.White;
-                NumPad5.ForeColor = Color.Black;
-                NumPad5.BackColor = Color.White;
-                NumPad6.ForeColor = Color.Black;
-                NumPad6.BackColor = Color.White;
-                NumPad7.ForeColor = Color.Black;
-                NumPad7.BackColor = Color.White;
-                NumPad8.ForeColor = Color.Black;
-                NumPad8.BackColor = Color.White;
-                NumPad9.ForeColor = Color.Black;
-                NumPad9.BackColor = Color.White; 
-                quantity = 2;
+                SendRequest("Waiter");
             }
-            else
+            waiter_status = eWaiter.eRequest;
+            waiterButton.BackColor = Color.DarkTurquoise;
+            //send request to manager
+        }
+        private void teaWaiterStatusCheck()
+        {
+            switch (waiter_status)
             {
-                NumPad2.ForeColor = Color.Black;
-                NumPad2.BackColor = Color.White;
-                quantity = 1;
+                case eWaiter.eClear:
+                    waiterButton.BackColor = SystemColors.ButtonHighlight;
+                    break;
+                case eWaiter.eRequest:
+                    waiterButton.BackColor = Color.DarkTurquoise;
+                    //send request
+                    break;
+            }
+            switch (tea_status)
+            {
+                case eTea.eClear:
+                    teaButton.BackColor = SystemColors.ButtonHighlight;
+                    break;
+                case eTea.eRequest:
+                    teaButton.BackColor = Color.Lime;
+                    //send request
+                    break;
             }
         }
 
-        private void NumPad3_Click(object sender, EventArgs e)
+        public void SendRequest(string Item)
         {
-            if (NumPad3.BackColor == Color.White)
+            SpcItm newReq = new SpcItm(Item, "0",tableNum);
+            Requests.Add(newReq);
+
+            try
             {
-                NumPad1.ForeColor = Color.Black;
-                NumPad1.BackColor = Color.White;
-                NumPad2.ForeColor = Color.Black;
-                NumPad2.BackColor = Color.White;
-                NumPad3.ForeColor = Color.White;
-                NumPad3.BackColor = Color.CadetBlue;
-                NumPad4.ForeColor = Color.Black;
-                NumPad4.BackColor = Color.White;
-                NumPad5.ForeColor = Color.Black;
-                NumPad5.BackColor = Color.White;
-                NumPad6.ForeColor = Color.Black;
-                NumPad6.BackColor = Color.White;
-                NumPad7.ForeColor = Color.Black;
-                NumPad7.BackColor = Color.White;
-                NumPad8.ForeColor = Color.Black;
-                NumPad8.BackColor = Color.White;
-                NumPad9.ForeColor = Color.Black;
-                NumPad9.BackColor = Color.White;
-                quantity = 3;
+                //get desktop path 
+                string path = Environment.GetFolderPath(Environment.SpecialFolder.Desktop) + "\\Tables";
+
+                if (!(Directory.Exists(path)))
+                {
+                    DirectoryInfo di = Directory.CreateDirectory(path);
+                }
+                path += "\\Request.txt";
+
+                // if file not there create one
+                if (!File.Exists(path))
+                {
+                    FileStream fs = new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite);
+                    fs.Close();
+                }
+
+                StreamWriter SW = new StreamWriter(path,true);
+                SW.Write(newReq.getSpcName());
+                SW.Write(';');
+                SW.Write(newReq.getSpcPrice());
+                SW.Write(';');
+                SW.WriteLine(newReq.getTableNum());
+                SW.Close();
             }
-            else
+
+            catch (Exception exc)
             {
-                NumPad3.ForeColor = Color.Black;
-                NumPad3.BackColor = Color.White;
-                quantity = 1;
+                Console.WriteLine("The process failed: {0}", exc.ToString());
+                DialogResult result = MessageBox.Show(this, "The process failed: " + exc.ToString(), "Error");
             }
         }
 
-        private void NumPad4_Click(object sender, EventArgs e)
+        private void MainForm_Load(object sender, EventArgs e)
         {
-            if (NumPad4.BackColor == Color.White)
+           
+            try
             {
-                NumPad1.ForeColor = Color.Black;
-                NumPad1.BackColor = Color.White;
-                NumPad2.ForeColor = Color.Black;
-                NumPad2.BackColor = Color.White;
-                NumPad3.ForeColor = Color.Black;
-                NumPad3.BackColor = Color.White;
-                NumPad4.ForeColor = Color.White;
-                NumPad4.BackColor = Color.CadetBlue;
-                NumPad5.ForeColor = Color.Black;
-                NumPad5.BackColor = Color.White;
-                NumPad6.ForeColor = Color.Black;
-                NumPad6.BackColor = Color.White;
-                NumPad7.ForeColor = Color.Black;
-                NumPad7.BackColor = Color.White;
-                NumPad8.ForeColor = Color.Black;
-                NumPad8.BackColor = Color.White;
-                NumPad9.ForeColor = Color.Black;
-                NumPad9.BackColor = Color.White;
-                quantity = 4;
+                //get desktop path 
+                string path = Environment.GetFolderPath(Environment.SpecialFolder.Desktop) + "\\Tables";
+
+                if (!(Directory.Exists(path)))
+                {
+                    DirectoryInfo di = Directory.CreateDirectory(path);
+                }
+                path += "\\Table.txt";
+                
+                // Boot up of table, start new file
+                FileStream fs = new FileStream(path, FileMode.Create, FileAccess.ReadWrite);
+                fs.Close();
+
+                path = Environment.GetFolderPath(Environment.SpecialFolder.Desktop) + "\\Tables\\Request.txt";
+                if (!(Directory.Exists(path)))
+                {
+                    fs=File.Create(path);
+                    fs.Close();
+                }
             }
-            else
+            catch (Exception exc)
             {
-                NumPad4.ForeColor = Color.Black;
-                NumPad4.BackColor = Color.White;
-                quantity = 1;
+                Console.WriteLine("The process failed: {0}", exc.ToString());
+                DialogResult result = MessageBox.Show(this, "The process failed: "+ exc.ToString(), "Error");
+            } 
+
+        }
+
+        private void spcMenu_Click(object sender, EventArgs e)
+        {
+            Specials specials = new Specials(false, tableNum);
+            specials.ShowDialog();
+            specials.Activate();            
+        }
+
+        
+        //change this to the card beeping when the time comes
+        private void SpcOrd_Click(object sender, EventArgs e)
+        {
+            Specials OrderSpc = new Specials(true, tableNum);
+            OrderSpc.ShowDialog();
+            OrderSpc.Activate();
+            if (OrderSpc.DialogResult == DialogResult.OK)
+            {
+                foreach (SpcItm n in OrderSpc.OrdSpc)
+                {
+                    Requests.Add(n);
+                }
             }
         }
 
-        private void NumPad5_Click(object sender, EventArgs e)
+        private void butSeeReq_Click(object sender, EventArgs e)
         {
-            if (NumPad5.BackColor == Color.White)
+            RunReq RunningRequests = new RunReq(tableNum);
+            RunningRequests.ShowDialog();
+            RunningRequests.Activate();
+            if (RunningRequests.DialogResult == DialogResult.OK)
             {
-                NumPad1.ForeColor = Color.Black;
-                NumPad1.BackColor = Color.White;
-                NumPad2.ForeColor = Color.Black;
-                NumPad2.BackColor = Color.White;
-                NumPad3.ForeColor = Color.Black;
-                NumPad3.BackColor = Color.White;
-                NumPad4.ForeColor = Color.Black;
-                NumPad4.BackColor = Color.White;
-                NumPad5.ForeColor = Color.White;
-                NumPad5.BackColor = Color.CadetBlue;
-                NumPad6.ForeColor = Color.Black;
-                NumPad6.BackColor = Color.White;
-                NumPad7.ForeColor = Color.Black;
-                NumPad7.BackColor = Color.White;
-                NumPad8.ForeColor = Color.Black;
-                NumPad8.BackColor = Color.White;
-                NumPad9.ForeColor = Color.Black;
-                NumPad9.BackColor = Color.White;
-                quantity = 5;
-            }
-            else
-            {
-                NumPad5.ForeColor = Color.Black;
-                NumPad5.BackColor = Color.White;
-                quantity = 1;
+                if (RunningRequests.indexDone >= 0)
+                {
+                    switch(Requests[RunningRequests.indexDone].getSpcName())
+                    {
+                        case "Tea":
+                            tea_status = eTea.eClear;
+                            teaButton.BackColor = Color.White;
+                            break;
+                        case "Waiter":
+                            waiter_status = eWaiter.eClear;
+                            waiterButton.BackColor = Color.White;
+                            break;
+                        default:
+                            break;
+
+                    }
+                    Requests.RemoveAt(RunningRequests.indexDone);
+                    //update the file
+                    string path = Environment.GetFolderPath(Environment.SpecialFolder.Desktop) + "\\Tables\\Request.txt";
+                    Requests.ListToFile(path,tableNum,false);
+                }
             }
         }
 
-        private void NumPad6_Click(object sender, EventArgs e)
+        private void OrderListBox_SelectedIndexChanged(object sender, EventArgs e)
         {
-            if (NumPad6.BackColor == Color.White)
-            {
-                NumPad1.ForeColor = Color.Black;
-                NumPad1.BackColor = Color.White;
-                NumPad2.ForeColor = Color.Black;
-                NumPad2.BackColor = Color.White;
-                NumPad3.ForeColor = Color.Black;
-                NumPad3.BackColor = Color.White;
-                NumPad4.ForeColor = Color.Black;
-                NumPad4.BackColor = Color.White;
-                NumPad5.ForeColor = Color.Black;
-                NumPad5.BackColor = Color.White;
-                NumPad6.ForeColor = Color.White;
-                NumPad6.BackColor = Color.CadetBlue;
-                NumPad7.ForeColor = Color.Black;
-                NumPad7.BackColor = Color.White;
-                NumPad8.ForeColor = Color.Black;
-                NumPad8.BackColor = Color.White;
-                NumPad9.ForeColor = Color.Black;
-                NumPad9.BackColor = Color.White;
-                quantity = 6;
-            }
-            else
-            {
-                NumPad6.ForeColor = Color.Black;
-                NumPad6.BackColor = Color.White;
-                quantity = 1;
-            }
+
         }
-
-        private void NumPad7_Click(object sender, EventArgs e)
-        {
-            if (NumPad7.BackColor == Color.White)
-            {
-                NumPad1.ForeColor = Color.Black;
-                NumPad1.BackColor = Color.White;
-                NumPad2.ForeColor = Color.Black;
-                NumPad2.BackColor = Color.White;
-                NumPad3.ForeColor = Color.Black;
-                NumPad3.BackColor = Color.White;
-                NumPad4.ForeColor = Color.Black;
-                NumPad4.BackColor = Color.White;
-                NumPad5.ForeColor = Color.Black;
-                NumPad5.BackColor = Color.White;
-                NumPad6.ForeColor = Color.Black;
-                NumPad6.BackColor = Color.White;
-                NumPad7.ForeColor = Color.White;
-                NumPad7.BackColor = Color.CadetBlue;
-                NumPad8.ForeColor = Color.Black;
-                NumPad8.BackColor = Color.White;
-                NumPad9.ForeColor = Color.Black;
-                NumPad9.BackColor = Color.White;
-                quantity = 7;
-            }
-            else
-            {
-                NumPad7.ForeColor = Color.Black;
-                NumPad7.BackColor = Color.White;
-                quantity = 1;
-            }
-        }
-
-        private void NumPad8_Click(object sender, EventArgs e)
-        {
-            if (NumPad8.BackColor == Color.White)
-            {
-                NumPad1.ForeColor = Color.Black;
-                NumPad1.BackColor = Color.White;
-                NumPad2.ForeColor = Color.Black;
-                NumPad2.BackColor = Color.White;
-                NumPad3.ForeColor = Color.Black;
-                NumPad3.BackColor = Color.White;
-                NumPad4.ForeColor = Color.Black;
-                NumPad4.BackColor = Color.White;
-                NumPad5.ForeColor = Color.Black;
-                NumPad5.BackColor = Color.White;
-                NumPad6.ForeColor = Color.Black;
-                NumPad6.BackColor = Color.White;
-                NumPad7.ForeColor = Color.Black;
-                NumPad7.BackColor = Color.White;
-                NumPad8.ForeColor = Color.White;
-                NumPad8.BackColor = Color.CadetBlue;
-                NumPad9.ForeColor = Color.Black;
-                NumPad9.BackColor = Color.White;
-                quantity = 8;
-            }
-            else
-            {
-                NumPad8.ForeColor = Color.Black;
-                NumPad8.BackColor = Color.White;
-                quantity = 1;
-            }
-        }
-
-        private void NumPad9_Click(object sender, EventArgs e)
-        {
-            if (NumPad9.BackColor == Color.White)
-            {
-                NumPad1.ForeColor = Color.Black;
-                NumPad1.BackColor = Color.White;
-                NumPad2.ForeColor = Color.Black;
-                NumPad2.BackColor = Color.White;
-                NumPad3.ForeColor = Color.Black;
-                NumPad3.BackColor = Color.White;
-                NumPad4.ForeColor = Color.Black;
-                NumPad4.BackColor = Color.White;
-                NumPad5.ForeColor = Color.Black;
-                NumPad5.BackColor = Color.White;
-                NumPad6.ForeColor = Color.Black;
-                NumPad6.BackColor = Color.White;
-                NumPad7.ForeColor = Color.Black;
-                NumPad7.BackColor = Color.White;
-                NumPad8.ForeColor = Color.Black;
-                NumPad8.BackColor = Color.White;
-                NumPad9.ForeColor = Color.White;
-                NumPad9.BackColor = Color.CadetBlue;
-                quantity = 9;
-            }
-            else
-            {
-                NumPad9.ForeColor = Color.Black;
-                NumPad9.BackColor = Color.White;
-                quantity = 1;
-            }
-        }
-
-
-
+        //need a function that constantly checks for xml parsing of status and pte form accordingly...
     }   
 } 
